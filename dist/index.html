@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Probix Film Studio</title>
+<link rel="stylesheet" href="style.css">
+<header><div class="brand"><b>◈</b><span>PROBIX <strong>FILM STUDIO</strong></span></div><button id="settings" class="quiet">⚙ &nbsp; Gemini settings</button></header>
+<div class="app-shell">
+<aside class="production-sidebar" aria-label="Production workflow">
+<div class="eyebrow sidebar-label">PRODUCTION WORKFLOW</div>
+<nav aria-label="Production stages" id="board"></nav>
+<section class="stage skill-sidebar" aria-labelledby="skills-label">
+<div class="stage-header"><h2 id="skills-label">Production skill</h2></div>
+<div class="stage-cards"><button id="open-skill" type="button">Import skill</button><small id="skill-status">No skill imported</small></div>
+</section>
+<section class="stage skill-sidebar" aria-labelledby="media-label"><div class="stage-header"><h2 id="media-label">ManyMotions</h2></div>
+<div class="stage-cards"><button type="button" id="open-media">Create media brief</button><small>Images, logos, short videos and ads</small></div></section>
+</aside>
+<main>
+<section class="hero"><div class="eyebrow">SCRIPT TO SCREEN</div><h1>Production board</h1><p>Add your cast and full script. The studio moves each shot through production for you.</p><span class="local">Saved on this device</span></section>
+<div id="notice" role="status" aria-live="polite"></div>
+<section id="inspector" aria-labelledby="heading"><div class="eyebrow">WORKSPACE</div><h2 id="heading" tabindex="-1"></h2><p id="sub"></p><div id="content"></div></section>
+<details class="panel" id="activity"><summary>Action log <span id="activity-count"></span></summary><ol id="activity-list"></ol></details>
+</main>
+</div>
+<dialog id="dialog"><form id="config"><h2>Gemini settings</h2><p>Use a Gemini API key with access to video generation. Your key stays in memory until you close or reload this page. Your script and selected images are sent to Google when you generate.</p><label>API key<input id="key" type="password" autocomplete="off"></label><div class="actions"><button type="button" id="close">Cancel</button><button class="primary">Use key</button></div></form></dialog>
+<dialog id="skill-dialog" aria-labelledby="skill-heading"><form id="skill-form">
+<h2 id="skill-heading">Import production skill</h2>
+<p>Upload a SKILL.md, Markdown, or plain-text file with creative instructions for this project. The studio sends these instructions to Gemini when generating portraits or planning shots.</p>
+<label>Skill file<input type="file" id="skill-file" accept=".md,.markdown,.txt,text/markdown,text/plain"></label>
+<label>Instructions preview<textarea id="skill-preview" readonly rows="8"></textarea></label>
+<p id="skill-message" role="status"></p>
+<div class="actions"><button type="button" id="skill-close">Close</button><button type="button" id="skill-remove">Remove skill</button><button class="primary" id="skill-save" disabled>Use this skill</button></div>
+</form></dialog>
+<dialog id="media-dialog" aria-labelledby="media-title">
+<form id="media-form"><h2 id="media-title">Create a ManyMotions brief</h2>
+<p>Answer one question at a time, then copy your brief to ManyMotions. Generation takes place in your ManyMotions account.</p>
+<div id="media-question"></div>
+<div class="actions"><button type="button" id="media-close">Close</button><button type="button" id="media-back">Back</button><button class="primary" id="media-next">Continue</button></div>
+</form>
+<section id="media-result" hidden><label>Ready-to-copy brief<textarea id="media-brief" rows="8" readonly></textarea></label>
+<p id="media-status" role="status"></p><div class="actions"><button type="button" id="media-copy">Copy brief</button>
+<a id="media-launch" target="_blank" rel="noopener noreferrer">Open ManyMotions</a></div></section>
+</dialog>
+<script type="module" src="studio.js"></script><script type="module" src="media-brief.js"></script></html>
