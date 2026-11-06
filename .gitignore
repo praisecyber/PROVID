@@ -1,0 +1,6 @@
+node_modules/
+.expo/
+generated/
+web-build/
+.env
+.env.*

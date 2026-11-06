@@ -32,3 +32,5 @@ main{max-width:1700px;margin:auto;padding:26px clamp(14px,3vw,50px)}.hero{positi
 .character-nav small{font-size:11px;font-weight:400}
 
 #media-dialog{width:min(560px,92vw);max-width:none}#media-dialog select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0e1118;color:var(--ink);font:inherit}#media-launch{color:var(--gold)}#media-result{margin-top:16px}
+
+.movie-idea{margin-top:22px;max-width:850px}.movie-idea textarea{min-height:85px}.walkthrough{display:flex;flex-wrap:wrap;gap:10px;list-style:none;padding:0;margin:18px 0 0}.walkthrough li{padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;color:var(--gold)}.character-steps[hidden]{display:none}

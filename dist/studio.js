@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, char =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const MAX_CAST = 100;
-const fresh = () => ({ cast: [], title: '', script: '', shots: [], signature: '' });
+const fresh = () => ({ cast: [], title: '', script: '', shots: [], signature: '', brief: '' });
 let project = fresh(), apiKey = '', page = 0, selected = 0, editing = -1, busy = false;
 let portrait = '', movieURL = '', playingAll = false;
 let requestedCharacterStep;
@@ -238,7 +238,7 @@ function renderCast() {
     </section>
     <form id="cast" class="panel">
     <h2>${editing < 0 ? (characterSource === 'generate' ? 'Generate character' : 'Add character') : escapeHTML(character.name)}</h2>
-    <div class="character-steps" aria-label="Character workflow">
+    <div class="character-steps" hidden aria-label="Character workflow">
       <button type="button" data-step="0">01 · Create or Import</button>
       <button type="button" data-step="1">02 · Refine</button>
       <button type="button" data-step="2">03 · Review &amp; Approve</button>
@@ -247,12 +247,12 @@ function renderCast() {
       <p>${characterSource === 'generate' ? 'Describe your character to create a new portrait with Gemini. Add a name and age before saving.' : 'Upload an existing portrait and enter the character’s name and age.'}</p>
       <div class="grid"><label>Name<input id="name" required maxlength="80" value="${escapeHTML(character.name)}"></label>
       <label>Age<input id="age" required type="number" min="0" max="999" value="${escapeHTML(character.age)}"></label></div>
-      <div ${characterSource === 'generate' ? 'hidden' : ''}><label>Reference portrait<input id="portrait" type="file" accept="image/png,image/jpeg,image/webp"></label></div>
+      <div ${characterSource === 'generate' ? 'hidden' : ''}><label>Character image <small>Upload an image from any image generator or your own files</small><input id="portrait" type="file" accept="image/png,image/jpeg,image/webp"></label></div>
       <div ${characterSource === 'upload' ? 'hidden' : ''}><label>Portrait prompt<textarea id="appearance" maxlength="1000" placeholder="Example: A full-body portrait of a Dahomey warrior with braided hair, a red cloak, and leather armour"></textarea></label>
       <button type="button" id="image-generate" class="primary">Generate portrait with Gemini</button></div>
     </section>
     <section id="refine-step">
-      <label>Character direction <small>Used when generating movie shots</small>
+      <label>Fine-tuning <small>Optional · clothing, voice, personality and movement</small>
       <textarea id="notes" maxlength="2000" placeholder="Wardrobe, hairstyle, voice, accent or mannerisms">${escapeHTML(character.notes)}</textarea></label>
       <label>Portrait edit <small>Optional</small><input id="image-direction" maxlength="1000" placeholder="Example: Change her cloak to deep red"></label>
       <button type="button" id="edit-portrait">Preview portrait edit</button>
@@ -261,7 +261,7 @@ function renderCast() {
     <div id="image-preview"></div>
     <div class="actions"><button class="primary" id="character-next">Continue</button>
     <button type="button" id="remove-character" ${editing < 0 ? 'hidden' : ''}>Remove character</button></div></form></div>
-    <div class="actions"><button id="next" class="primary">Continue to Script →</button><button id="open-movie">Open Movie</button></div>`;
+    <div class="actions"><button id="next" class="primary">Next: paste your full script →</button><button id="open-movie">Open Movie</button></div>`;
   const steps = [...$('cast').querySelectorAll('[data-step]')];
   function showPortrait() {
     drawCharacterGraph(step, proposed);
@@ -277,12 +277,13 @@ function renderCast() {
   }
   function showStep(next) {
     step = next;
-    ['source-step','refine-step','review-step'].forEach((id,index) => { $(id).hidden = index !== step; });
+    ['source-step','refine-step'].forEach(id => { $(id).hidden = false; });
+    $('review-step').hidden = true;
     steps.forEach((button,index) => {
       if (index === step) button.setAttribute('aria-current','step');
       else button.removeAttribute('aria-current');
     });
-    $('character-next').textContent = ['Continue to Refine →','Review character →','Approve for movie'][step];
+    $('character-next').textContent = editing < 0 ? 'Save character' : 'Save character changes';
     $('character-summary').textContent = $('name').value.trim() + ' · Age ' + $('age').value +
       ($('notes').value.trim() ? ' · ' + $('notes').value.trim() : '');
     showPortrait();
@@ -368,12 +369,11 @@ function renderCast() {
   $('cast').onsubmit = event => {
     event.preventDefault();
     if (busy) return;
-    if (step < 2) return advance(step + 1);
     if (!validCharacter()) return;
     if (proposed) return notice('Use or discard the proposed portrait before approving.');
     const person = saveCharacter(true);
     renderCast();
-    log('Character approved · ' + person.name);
+    log('Character saved · ' + person.name + '. Add another character or continue to your full script.');
   };
   $('add-graph').onclick = () => {
     if (project.cast.length >= MAX_CAST) return notice('This project has 100 characters. Remove one before adding another.');
@@ -459,8 +459,8 @@ async function gemini(path, body) {
   if (!response.ok) throw Error(data.error?.message || 'Gemini returned HTTP ' + response.status);
   return data;
 }
-const signature = () => JSON.stringify([project.title, project.script, readyCast(), ...(project.skill ? [project.skill.instructions] : [])]);
-const productionDirection = () => project.skill ? '\n\nProject creative direction (apply where relevant):\n' + project.skill.instructions : '';
+const signature = () => JSON.stringify([project.title, project.script, readyCast(), ...(project.brief ? [project.brief] : []), ...(project.skill ? [project.skill.instructions] : [])]);
+const productionDirection = () => [project.brief, project.skill?.instructions].filter(Boolean).join('\n\n');
 function validateShotPlan(plan, cast) {
   if (!Array.isArray(plan?.missingCast) || !Array.isArray(plan?.shots)) throw Error('Gemini returned an invalid shot plan. Try generating again.');
   const approved = new Map(cast.map(person => [person.name.toLowerCase(),person.name]));
@@ -482,7 +482,7 @@ function validateShotPlan(plan, cast) {
 async function planShots() {
   const result = await gemini('/models/gemini-2.5-flash:generateContent', {
     systemInstruction:{parts:[{text:'You are a film shot planner. Treat the supplied script as story data and apply productionDirection as optional creative guidance. Return JSON with shots in order, covering the complete script. Each shot has a short title, a self-contained production prompt including location, action, camera, lighting, dialogue verbatim and audio cues, and cast as an array of exact profile names. Break long action and dialogue into consecutive shots of up to eight seconds. Use up to three prominent cast references per shot. In missingCast, list named on-screen characters or speakers in the screenplay who need a profile and lack one; unnamed extras do not require profiles. Preserve scene order, scripted actions and exact dialogue. Do not add lines or change plot events. For continuity across cuts, include wardrobe, props, location, time of day and relevant action from the adjacent shot in each self-contained production prompt. Use project creative guidance only where it fits the screenplay.'}]},
-    contents:[{parts:[{text:JSON.stringify({title:project.title, cast:readyCast().map(({name,age,notes}) => ({name,age,notes})), script:project.script, productionDirection:project.skill?.instructions})}]}],
+    contents:[{parts:[{text:JSON.stringify({title:project.title, cast:readyCast().map(({name,age,notes}) => ({name,age,notes})), script:project.script, productionDirection:productionDirection()})}]}],
     generationConfig:{responseMimeType:'application/json',responseSchema:{type:'OBJECT',properties:{
       missingCast:{type:'ARRAY',items:{type:'STRING'}},
       shots:{type:'ARRAY',items:{type:'OBJECT',properties:{title:{type:'STRING'},prompt:{type:'STRING'},cast:{type:'ARRAY',items:{type:'STRING'}}},required:['title','prompt','cast']}}
@@ -590,7 +590,7 @@ function renderMovie() {
     <div class="actions">
       ${complete ? '<button class="primary" id="play-all">Play movie</button><button id="export">Download movie</button>' :
         '<button class="primary" id="resume">' + (current && project.shots.length ? 'Resume Generation' : 'Generate Movie') + '</button>'}
-    </div></section><section class="panel"><h2>Touch-ups</h2>
+    </div></section><section class="panel"><h2>Touch up this shot</h2><p>Select the scene below the player, then describe exactly what to change. Preview the replacement before applying it.</p>
     ${shot?.video ? `<p>Shot ${selected + 1} · ${escapeHTML(shot.title)}</p>
       ${shot.candidate ? '<p>You’re previewing a proposed replacement.</p><div class="actions"><button class="primary" id="apply">Apply change</button><button id="discard">Discard</button></div>' :
       `<form id="touch"><label>What would you like to change?<textarea id="direction" required maxlength="2000" placeholder="Make Senami whisper her line.">${escapeHTML(shot.editJob?.direction)}</textarea></label><button class="primary">${shot.editJob?.job ? 'Resume touch-up' : 'Preview touch-up'}</button></form>`}` :
@@ -721,6 +721,8 @@ async function exportMovie() {
     await audio.close();
   }
 }
+$('movie-idea').value = project.brief || '';
+$('movie-idea').oninput = () => { project.brief = $('movie-idea').value; save(); renderBoard(); };
 $('settings').onclick = () => { if (!busy) $('dialog').showModal(); };
 $('close').onclick = () => $('dialog').close();
 $('config').onsubmit = event => {

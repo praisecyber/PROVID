@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "PROVID",
+    "slug": "provid",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "ios": { "supportsTablet": true },
+    "android": { "edgeToEdgeEnabled": true },
+    "web": { "bundler": "metro" }
+  }
+}

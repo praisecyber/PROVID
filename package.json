@@ -1,0 +1,24 @@
+{
+  "name": "provid",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "prepare:studio": "node scripts/bundle-studio.mjs",
+    "start": "npm run prepare:studio && expo start",
+    "android": "npm run prepare:studio && expo start --android",
+    "ios": "npm run prepare:studio && expo start --ios",
+    "web": "npm run prepare:studio && expo start --web",
+    "export:web": "npm run prepare:studio && expo export --platform web --output-dir web-build"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
+    "expo": "~54.0.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-web": "~0.21.0",
+    "react-native-webview": "13.15.0"
+  }
+}
