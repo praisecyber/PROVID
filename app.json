@@ -5,8 +5,34 @@
     "version": "1.0.0",
     "orientation": "default",
     "userInterfaceStyle": "dark",
-    "ios": { "supportsTablet": true },
-    "android": { "edgeToEdgeEnabled": true },
-    "web": { "bundler": "metro" }
+    "ios": {
+      "supportsTablet": true,
+      "backgroundColor": "#07140d"
+    },
+    "android": {
+      "edgeToEdgeEnabled": true,
+      "backgroundColor": "#07140d",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#07140d"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "name": "PROVID",
+      "shortName": "PROVID",
+      "themeColor": "#07140d",
+      "backgroundColor": "#07140d",
+      "description": "Script to screen: describe your idea, add your cast, generate your movie."
+    },
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#07140d",
+    "primaryColor": "#22c55e",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#07140d"
+    }
   }
 }

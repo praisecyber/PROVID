@@ -134,7 +134,7 @@ async function readPortrait(file) {
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#18151c';
+  ctx.fillStyle = '#0b1c12';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
@@ -443,7 +443,7 @@ function renderScript() {
   });
   $('generate').onclick = () => {
     if (!readyCast().length || !project.script.trim()) return notice('Approve at least one character and add your full script first.');
-    if (!apiKey) return $('dialog').showModal();
+    if ((!apiKey && (provider() === 'gemini' || project.signature !== signature())) || videoKeyMissing()) return $('dialog').showModal();
     openStage(2);
     run(generateMovie)();
   };
@@ -481,7 +481,7 @@ function validateShotPlan(plan, cast) {
 }
 async function planShots() {
   const result = await gemini('/models/gemini-2.5-flash:generateContent', {
-    systemInstruction:{parts:[{text:'You are a film shot planner. Treat the supplied script as story data and apply productionDirection as optional creative guidance. Return JSON with shots in order, covering the complete script. Each shot has a short title, a self-contained production prompt including location, action, camera, lighting, dialogue verbatim and audio cues, and cast as an array of exact profile names. Break long action and dialogue into consecutive shots of up to eight seconds. Use up to three prominent cast references per shot. In missingCast, list named on-screen characters or speakers in the screenplay who need a profile and lack one; unnamed extras do not require profiles. Preserve scene order, scripted actions and exact dialogue. Do not add lines or change plot events. For continuity across cuts, include wardrobe, props, location, time of day and relevant action from the adjacent shot in each self-contained production prompt. Use project creative guidance only where it fits the screenplay.'}]},
+    systemInstruction:{parts:[{text:'You are a film shot planner. Treat the supplied script as story data and apply productionDirection as optional creative guidance. Return JSON with shots in order, covering the complete script. Each shot has a short title, a self-contained production prompt including location, action, camera, lighting, dialogue verbatim and audio cues, and cast as an array of exact profile names. Break long action and dialogue into consecutive shots of up to ' + maxSeconds() + ' seconds. Use up to three prominent cast references per shot. In missingCast, list named on-screen characters or speakers in the screenplay who need a profile and lack one; unnamed extras do not require profiles. Preserve scene order, scripted actions and exact dialogue. Do not add lines or change plot events. For continuity across cuts, include wardrobe, props, location, time of day and relevant action from the adjacent shot in each self-contained production prompt. Use project creative guidance only where it fits the screenplay.'}]},
     contents:[{parts:[{text:JSON.stringify({title:project.title, cast:readyCast().map(({name,age,notes}) => ({name,age,notes})), script:project.script, productionDirection:productionDirection()})}]}],
     generationConfig:{responseMimeType:'application/json',responseSchema:{type:'OBJECT',properties:{
       missingCast:{type:'ARRAY',items:{type:'STRING'}},
@@ -502,17 +502,26 @@ async function planShots() {
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function renderShot(shot, edit) {
+  const kind = shot.job ? (shot.jobProvider || provider()) : provider();
+  if (kind === 'magichour') return renderMagicHourShot(shot, edit);
+  if (kind === 'selfhosted') return renderSelfHostedShot(shot, edit);
+  return renderGeminiShot(shot, edit);
+}
+async function renderGeminiShot(shot, edit) {
+  const conversational = edit && shot.interaction;
+  const revision = edit && !conversational ? '\nRequested revision: ' + edit : '';
   if (!shot.job) {
-    const cast = edit ? [] : readyCast().filter(person => shot.cast.includes(person.name)).slice(0, 3);
+    const cast = conversational ? [] : readyCast().filter(person => shot.cast.includes(person.name)).slice(0, 3);
     const images = cast.map(person => ({type:'image',mime_type:'image/jpeg',data:person.image.split(',')[1]}));
-    const prompt = edit ? 'Edit the previous video. Keep the rest of the shot as close to the original as possible. Requested change: ' + edit :
-      'Create one cinematic 3D animated film shot, widescreen, with synchronized dialogue and sound. ' + shot.prompt + '\nReference mapping: ' +
+    const prompt = conversational ? 'Edit the previous video. Keep the rest of the shot as close to the original as possible. Requested change: ' + edit :
+      'Create one cinematic 3D animated film shot, widescreen, with synchronized dialogue and sound. ' + shot.prompt + revision + '\nReference mapping: ' +
       cast.map((person,index) => '<IMAGE_REF_' + index + '> is ' + person.name + ', age ' + person.age + '. ' + person.notes).join('\n');
-    const request = {model:'gemini-omni-1.1-flash',input:[...(edit ? [] : images),{type:'text',text:prompt}],background:true};
-    if (edit) request.previous_interaction_id = shot.interaction;
+    const request = {model:'gemini-omni-1.1-flash',input:[...(conversational ? [] : images),{type:'text',text:prompt}],background:true};
+    if (conversational) request.previous_interaction_id = shot.interaction;
     const started = await gemini('/interactions', request);
     if (!started.id) throw Error('Gemini did not return a render job.');
     shot.job = started.id;
+    shot.jobProvider = 'gemini';
     save();
     renderBoard();
   }
@@ -533,6 +542,7 @@ async function renderShot(shot, edit) {
       }
       const replacement = {video:blob,interaction:shot.job};
       delete shot.job;
+      delete shot.jobProvider;
       return replacement;
     }
     if (!['in_progress','queued','pending','running'].includes(result.status)) {
@@ -544,8 +554,141 @@ async function renderShot(shot, edit) {
   }
   throw Error('The shot is still rendering. Use Resume Generation to check the existing job.');
 }
+// <video-providers>
+const provider = () => project.videoProvider || 'gemini';
+const maxSeconds = () => provider() === 'gemini' ? 8 : 5;
+let magicKey = '';
+const selfHostBase = () => (project.selfHostURL || '').trim().replace(/\/+$/, '');
+function videoKeyMissing() {
+  if (provider() === 'magichour' && !magicKey) return 'Add your Magic Hour API key in Settings to continue.';
+  if (provider() === 'selfhosted' && !selfHostBase()) return 'Add your video server address in Settings to continue.';
+  return '';
+}
+function shotLead(shot) {
+  const ready = readyCast();
+  return ready.find(person => shot.cast?.includes(person.name)) || ready[0];
+}
+function freePrompt(shot, edit) {
+  const cast = readyCast().filter(person => shot.cast?.includes(person.name));
+  return 'Cinematic 3D animated film shot, widescreen, with synchronized dialogue and sound. ' + shot.prompt +
+    (edit ? '\nRequested revision: ' + edit : '') +
+    (cast.length ? '\nCharacters: ' + cast.map(person => person.name + ', age ' + person.age + (person.notes ? '. ' + person.notes : '')).join('; ') : '');
+}
+async function fetchVideoBlob(url) {
+  let response;
+  try { response = await fetch(url); }
+  catch { throw Error('The finished video could not be downloaded by this browser (network or CORS).'); }
+  if (!response.ok) throw Error('Could not download the generated shot.');
+  const blob = await response.blob();
+  return new Blob([blob], {type: blob.type && blob.type.startsWith('video/') ? blob.type : 'video/mp4'});
+}
+async function magicHour(path, options = {}) {
+  let response;
+  try {
+    response = await fetch('https://api.magichour.ai/v1' + path, {...options, headers:{
+      Authorization:'Bearer ' + magicKey, Accept:'application/json',
+      ...(options.body ? {'Content-Type':'application/json'} : {})}});
+  } catch { throw Error('Could not reach Magic Hour from this browser (network or CORS). Try the self-hosted option.'); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Error(data.message || 'Magic Hour returned HTTP ' + response.status);
+  return data;
+}
+async function magicHourUpload(image) {
+  const blob = await (await fetch(image)).blob();
+  const upload = await magicHour('/files/upload-urls', {method:'POST', body:JSON.stringify({items:[{type:'image', extension:'jpg'}]})});
+  const item = upload.items?.[0];
+  if (!item?.upload_url || !item.file_path) throw Error('Magic Hour did not return an upload address.');
+  const put = await fetch(item.upload_url, {method:'PUT', body:blob});
+  if (!put.ok) throw Error('Could not upload the character image to Magic Hour.');
+  return item.file_path;
+}
+async function renderMagicHourShot(shot, edit) {
+  if (!shot.job) {
+    const lead = shotLead(shot);
+    if (!lead) throw Error('Approve at least one character first.');
+    const file = await magicHourUpload(lead.image);
+    const started = await magicHour('/image-to-video', {method:'POST', body:JSON.stringify({
+      name:(project.title || 'PROVID') + ' · ' + shot.title, end_seconds:5, model:'ltx-2.5', resolution:'480p', audio:true,
+      style:{prompt:freePrompt(shot, edit)}, assets:{image_file_path:file}})});
+    if (!started.id) throw Error('Magic Hour did not return a render job.');
+    shot.job = started.id;
+    shot.jobProvider = 'magichour';
+    save();
+    renderBoard();
+  }
+  for (let attempt = 0; attempt < 180; attempt++) {
+    const result = await magicHour('/video-projects/' + encodeURIComponent(shot.job));
+    if (result.status === 'complete') {
+      const url = result.downloads?.[0]?.url;
+      if (!url) { delete shot.job; delete shot.jobProvider; save(); throw Error('Magic Hour finished without a video.'); }
+      const video = await fetchVideoBlob(url);
+      delete shot.job;
+      delete shot.jobProvider;
+      return {video};
+    }
+    if (result.status === 'error' || result.status === 'canceled') {
+      delete shot.job;
+      delete shot.jobProvider;
+      save();
+      throw Error(result.error?.message || 'Magic Hour render ended with status ' + result.status + '.');
+    }
+    await pause(5000);
+  }
+  throw Error('The shot is still rendering. Use Resume Generation to check the existing job.');
+}
+async function selfHost(method, path, body) {
+  const base = selfHostBase();
+  let response;
+  try {
+    response = await fetch(base + path, {method, headers:body ? {'Content-Type':'application/json'} : undefined, body:body ? JSON.stringify(body) : undefined});
+  } catch { throw Error('Could not reach your video server at ' + base + '. Check that it is running, reachable from this device, and allows CORS.'); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = Error(data.detail || data.error || 'Video server returned HTTP ' + response.status);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+async function renderSelfHostedShot(shot, edit) {
+  if (!shot.job) {
+    const lead = shotLead(shot);
+    if (!lead) throw Error('Approve at least one character first.');
+    const started = await selfHost('POST', '/generate', {prompt:freePrompt(shot, edit), image:lead.image, seconds:5});
+    if (!started.id) throw Error('Your video server did not return a job id.');
+    shot.job = started.id;
+    shot.jobProvider = 'selfhosted';
+    save();
+    renderBoard();
+  }
+  for (let attempt = 0; attempt < 360; attempt++) {
+    let result;
+    try { result = await selfHost('GET', '/jobs/' + encodeURIComponent(shot.job)); }
+    catch (error) {
+      if (error.status === 404) { delete shot.job; delete shot.jobProvider; save(); throw Error('Your video server no longer has this job. Generate again.'); }
+      throw error;
+    }
+    if (result.status === 'complete') {
+      if (!result.video_url) { delete shot.job; delete shot.jobProvider; save(); throw Error('Your video server finished without a video.'); }
+      const video = await fetchVideoBlob(new URL(result.video_url, selfHostBase() + '/').href);
+      delete shot.job;
+      delete shot.jobProvider;
+      return {video};
+    }
+    if (result.status === 'error') {
+      delete shot.job;
+      delete shot.jobProvider;
+      save();
+      throw Error(result.error || 'Your video server could not render this shot.');
+    }
+    await pause(5000);
+  }
+  throw Error('The shot is still rendering. Use Resume Generation to check the existing job.');
+}
+// </video-providers>
 async function generateMovie() {
-  if (!apiKey) { $('dialog').showModal(); return; }
+  const missing = videoKeyMissing();
+  if (missing) { $('dialog').showModal(); throw Error(missing); }
   const current = signature();
   if (current !== project.signature || !project.shots.length) {
     log('Reading your full script and planning shots…');
@@ -634,7 +777,7 @@ function renderMovie() {
     if (shot.editJob?.job && shot.editJob.direction !== direction) throw Error('Resume the existing touch-up using its original wording first.');
     playingAll = false;
     player?.pause();
-    shot.editJob ||= {direction, interaction:shot.interaction};
+    shot.editJob ||= {direction, interaction:shot.interaction, prompt:shot.prompt, cast:shot.cast, title:shot.title};
     shot.editJob.direction = direction;
     log('Rendering a replacement for shot ' + (selected + 1) + '…');
     try {
@@ -723,14 +866,38 @@ async function exportMovie() {
 }
 $('movie-idea').value = project.brief || '';
 $('movie-idea').oninput = () => { project.brief = $('movie-idea').value; save(); renderBoard(); };
-$('settings').onclick = () => { if (!busy) $('dialog').showModal(); };
+const providerNotes = {
+  gemini:'Best quality: reference images for up to three characters, dialogue and sound, and edits that continue the previous result. Paid only: Google bills per second of video and has no free tier for it.',
+  magichour:'Free credits on signup, but small: a few 5-second, 480p shots. Each shot starts from one character image (no multi-character references) and a touch-up re-renders the shot with your change added. Check your credit balance on magichour.ai.',
+  selfhosted:'Free and unlimited, but you must run a video model on a computer with a strong NVIDIA GPU (see server/README.md). Shots are 5 seconds. A phone must be able to reach the server address.'
+};
+function syncProviderFields() {
+  const kind = $('video-provider').value;
+  $('mh-field').hidden = kind !== 'magichour';
+  $('sh-field').hidden = kind !== 'selfhosted';
+  $('provider-note').textContent = providerNotes[kind];
+}
+$('settings').onclick = () => {
+  if (busy) return;
+  $('video-provider').value = provider();
+  $('sh-url').value = project.selfHostURL || '';
+  syncProviderFields();
+  $('dialog').showModal();
+};
+$('video-provider').onchange = syncProviderFields;
 $('close').onclick = () => $('dialog').close();
 $('config').onsubmit = event => {
   event.preventDefault();
-  apiKey = $('key').value.trim();
+  if ($('key').value.trim()) apiKey = $('key').value.trim();
+  if ($('mh-key').value.trim()) magicKey = $('mh-key').value.trim();
   $('key').value = '';
+  $('mh-key').value = '';
+  project.videoProvider = $('video-provider').value;
+  project.selfHostURL = $('sh-url').value.trim();
+  save();
   $('dialog').close();
-  notice(apiKey ? 'Gemini key set for this session. You can now generate.' : 'Gemini key cleared.');
+  const missing = videoKeyMissing();
+  notice(missing || 'Settings saved for this session. Keys are kept in memory only.');
 };
 const MAX_SKILL_BYTES = 32768;
 let pendingSkill;

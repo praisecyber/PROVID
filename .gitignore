@@ -4,3 +4,7 @@ generated/
 web-build/
 .env
 .env.*
+
+__pycache__/
+*.py[cod]
+server/videos/

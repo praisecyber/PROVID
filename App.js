@@ -6,7 +6,7 @@ import Studio from './Studio';
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#0c0e13" />
+      <StatusBar barStyle="light-content" backgroundColor="#07140d" />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.workspace}><Studio /></View>
       </SafeAreaView>
@@ -14,6 +14,6 @@ export default function App() {
   );
 }
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0c0e13', ...(Platform.OS === 'web' ? { height: '100vh' } : {}) },
+  safe: { flex: 1, backgroundColor: '#07140d', ...(Platform.OS === 'web' ? { height: '100vh' } : {}) },
   workspace: { flex: 1 },
 });
